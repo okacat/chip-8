@@ -3,6 +3,26 @@ enum Instruction {
     Cls,
     Ret,
     Jmp { address: u16 },
+    Call { address: u16 },
+    Se { reg: u8, val: u8 },
+    Sne { reg: u8, val: u8 },
+    SeReg { reg1: u8, reg2: u8 },
+    Ld { reg: u8, val: u8 },
+    Add { reg: u8, val: u8 },
+    LdReg { reg1: u8, reg2: u8 },
+    Or { reg1: u8, reg2: u8 },
+    And { reg1: u8, reg2: u8 },
+    Xor { reg1: u8, reg2: u8 },
+    AddReg { reg1: u8, reg2: u8 },
+    SubReg { reg1: u8, reg2: u8 },
+    Shr { reg1: u8, reg2: u8 },
+    SubN { reg1: u8, reg2: u8 },
+    Shl { reg1: u8, reg2: u8 },
+    SneReg { reg1: u8, reg2: u8 },
+    Ldi { address: u16 },
+    JmpV0 { address: u16 },
+    Rnd { mask: u8 },
+    Drw { reg1: u8, reg2: u8, n_bytes: u8 },
 }
 
 struct Registers {
@@ -58,6 +78,52 @@ fn decode_instruction(instruction: u16) -> Instruction {
         x if get_nibble_u16(x, 3) == 0x1 => Instruction::Jmp {
             address: 0x0FFF & x,
         },
+        x if get_nibble_u16(x, 3) == 0x2 => Instruction::Call {
+            address: 0x0FFF & x,
+        },
+        x if get_nibble_u16(x, 3) == 0x03 => Instruction::Se {
+            reg: get_nibble_u16(x, 2),
+            val: (x & 0xFF) as u8,
+        },
+        x if get_nibble_u16(x, 3) == 0x04 => Instruction::Sne {
+            reg: get_nibble_u16(x, 2),
+            val: (x & 0xFF) as u8,
+        },
+        x if get_nibble_u16(x, 3) == 0x05 => Instruction::SeReg {
+            reg1: get_nibble_u16(x, 2),
+            reg2: get_nibble_u16(x, 1),
+        },
+        x if get_nibble_u16(x, 3) == 0x06 => Instruction::Ld {
+            reg: get_nibble_u16(x, 2),
+            val: (x & 0xFF) as u8,
+        },
+        x if get_nibble_u16(x, 3) == 0x07 => Instruction::Add {
+            reg: get_nibble_u16(x, 2),
+            val: (x & 0xFF) as u8,
+        },
+        x if get_nibble_u16(x, 3) == 0x08 => {
+            let reg1 = get_nibble_u16(x, 2);
+            let reg2 = get_nibble_u16(x, 1);
+            match get_nibble_u16(x, 0) {
+                0x0 => Instruction::LdReg { reg1, reg2 },
+                0x1 => Instruction::Or { reg1, reg2 },
+                0x2 => Instruction::And { reg1, reg2 },
+                0x3 => Instruction::Xor { reg1, reg2 },
+                0x4 => Instruction::AddReg { reg1, reg2 },
+                0x5 => Instruction::SubReg { reg1, reg2 },
+                0x6 => Instruction::Shr { reg1, reg2 },
+                0x7 => Instruction::SubN { reg1, reg2 },
+                0xE => Instruction::Shl { reg1, reg2 },
+                unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
+            }
+        }
+        x if get_nibble_u16(x, 3) == 0x09 => Instruction::SneReg {
+            reg1: get_nibble_u16(x, 2),
+            reg2: get_nibble_u16(x, 1),
+        },
+        x if get_nibble_u16(x, 3) == 0x0A => Instruction::Ldi {
+            address: (x & 0xFFF) as u16,
+        },
         _ => panic!("Instruction #X{} not recognized", instruction),
     };
 }
@@ -101,6 +167,187 @@ mod tests {
         assert_eq!(
             decode_instruction(0x1ABC),
             Instruction::Jmp { address: 0xABC }
+        );
+    }
+
+    #[test]
+    fn decode_call() {
+        assert_eq!(
+            decode_instruction(0x2ABC),
+            Instruction::Call { address: 0xABC }
+        );
+    }
+
+    #[test]
+    fn decode_skip_equal() {
+        assert_eq!(
+            decode_instruction(0x31AB),
+            Instruction::Se {
+                reg: 0x1,
+                val: 0xAB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_skip_not_equal() {
+        assert_eq!(
+            decode_instruction(0x41AB),
+            Instruction::Sne {
+                reg: 0x1,
+                val: 0xAB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_skip_equal_registers() {
+        assert_eq!(
+            decode_instruction(0x5120),
+            Instruction::SeReg {
+                reg1: 0x1,
+                reg2: 0x2
+            }
+        );
+    }
+
+    #[test]
+    fn decode_load() {
+        assert_eq!(
+            decode_instruction(0x61AB),
+            Instruction::Ld {
+                reg: 0x1,
+                val: 0xAB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_add() {
+        assert_eq!(
+            decode_instruction(0x71AB),
+            Instruction::Add {
+                reg: 0x1,
+                val: 0xAB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_load_reg() {
+        assert_eq!(
+            decode_instruction(0x8AB0),
+            Instruction::LdReg {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_or() {
+        assert_eq!(
+            decode_instruction(0x8AB1),
+            Instruction::Or {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_and() {
+        assert_eq!(
+            decode_instruction(0x8AB2),
+            Instruction::And {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_load_xor() {
+        assert_eq!(
+            decode_instruction(0x8AB3),
+            Instruction::Xor {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_load_add_reg() {
+        assert_eq!(
+            decode_instruction(0x8AB4),
+            Instruction::AddReg {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_sub_reg() {
+        assert_eq!(
+            decode_instruction(0x8AB5),
+            Instruction::SubReg {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_shr() {
+        assert_eq!(
+            decode_instruction(0x8AB6),
+            Instruction::Shr {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_subn() {
+        assert_eq!(
+            decode_instruction(0x8AB7),
+            Instruction::SubN {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_shl() {
+        assert_eq!(
+            decode_instruction(0x8ABE),
+            Instruction::Shl {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_skip_not_equal_registers() {
+        assert_eq!(
+            decode_instruction(0x9AB0),
+            Instruction::SneReg {
+                reg1: 0xA,
+                reg2: 0xB
+            }
+        );
+    }
+
+    #[test]
+    fn decode_load_i() {
+        assert_eq!(
+            decode_instruction(0xAABC),
+            Instruction::Ldi { address: 0xABC }
         );
     }
 }
