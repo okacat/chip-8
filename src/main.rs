@@ -21,8 +21,19 @@ enum Instruction {
     SneReg { reg1: u8, reg2: u8 },
     Ldi { address: u16 },
     JmpV0 { address: u16 },
-    Rnd { mask: u8 },
+    Rnd { reg: u8, mask: u8 },
     Drw { reg1: u8, reg2: u8, n_bytes: u8 },
+    Skp { key: u8 },
+    SkpNp { key: u8 },
+    LdFromDt { reg: u8 },
+    LdKey { reg: u8 },
+    LdIntoDt { reg: u8 },
+    LdSt { reg: u8 },
+    AddI { reg: u8 },
+    LdF { reg: u8 },
+    LdB { reg: u8 },
+    LdRegsMem { reg: u8 },
+    LdMemRegs { reg: u8 },
 }
 
 struct Registers {
@@ -127,6 +138,41 @@ fn decode_instruction(instruction: u16) -> Instruction {
         0xA => Instruction::Ldi {
             address: (instruction & 0x0FFF) as u16,
         },
+        0xB => Instruction::JmpV0 {
+            address: (instruction & 0x0FFF) as u16,
+        },
+        0xC => Instruction::Rnd {
+            reg: get_nibble_u16(instruction, 2),
+            mask: (instruction & 0xFF) as u8,
+        },
+        0xD => Instruction::Drw {
+            reg1: get_nibble_u16(instruction, 2),
+            reg2: get_nibble_u16(instruction, 1),
+            n_bytes: get_nibble_u16(instruction, 0),
+        },
+        0xE => {
+            let key = get_nibble_u16(instruction, 2);
+            match (instruction & 0xFF) as u8 {
+                0x9E => Instruction::Skp { key },
+                0xA1 => Instruction::SkpNp { key },
+                unknown_op => panic!("Opcode #X{} not recognized for group E", unknown_op),
+            }
+        }
+        0xF => {
+            let reg = get_nibble_u16(instruction, 2);
+            match (instruction & 0xFF) as u8 {
+                0x07 => Instruction::LdFromDt { reg },
+                0x0A => Instruction::LdKey { reg },
+                0x15 => Instruction::LdIntoDt { reg },
+                0x18 => Instruction::LdSt { reg },
+                0x1E => Instruction::AddI { reg },
+                0x29 => Instruction::LdF { reg },
+                0x33 => Instruction::LdB { reg },
+                0x55 => Instruction::LdRegsMem { reg },
+                0x65 => Instruction::LdMemRegs { reg },
+                unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
+            }
+        }
         _ => panic!("Instruction #X{} not recognized", instruction),
     }
 }
@@ -265,6 +311,33 @@ mod tests {
                 },
             ),
             (0xAABC, Instruction::Ldi { address: 0xABC }),
+            (0xBABC, Instruction::JmpV0 { address: 0xABC }),
+            (
+                0xC1AB,
+                Instruction::Rnd {
+                    reg: 0x1,
+                    mask: 0xAB,
+                },
+            ),
+            (
+                0xDAB5,
+                Instruction::Drw {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                    n_bytes: 0x5,
+                },
+            ),
+            (0xE19E, Instruction::Skp { key: 0x1 }),
+            (0xE2A1, Instruction::SkpNp { key: 0x2 }),
+            (0xF107, Instruction::LdFromDt { reg: 0x1 }),
+            (0xF10A, Instruction::LdKey { reg: 0x1 }),
+            (0xF115, Instruction::LdIntoDt { reg: 0x1 }),
+            (0xF118, Instruction::LdSt { reg: 0x1 }),
+            (0xF11E, Instruction::AddI { reg: 0x1 }),
+            (0xF129, Instruction::LdF { reg: 0x1 }),
+            (0xF133, Instruction::LdB { reg: 0x1 }),
+            (0xF155, Instruction::LdRegsMem { reg: 0x1 }),
+            (0xF165, Instruction::LdMemRegs { reg: 0x1 }),
         ];
 
         for (input, expected) in cases.iter() {
