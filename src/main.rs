@@ -140,15 +140,12 @@ fn get_nibble_u16(x: u16, i: u8) -> u8 {
     return ((x >> i * 4) & 0xF) as u8;
 }
 
-// 0000 0000 0000 0000
-// F
-
 #[cfg(test)]
 mod tests {
     use crate::{decode_instruction, get_nibble_u16, Instruction};
 
     #[test]
-    fn get_nibble_works() {
+    fn get_nibble_u16_works() {
         assert_eq!(get_nibble_u16(0x4321, 0), 0x01);
         assert_eq!(get_nibble_u16(0x4321, 1), 0x02);
         assert_eq!(get_nibble_u16(0x4321, 2), 0x03);
@@ -156,201 +153,122 @@ mod tests {
     }
 
     #[test]
-    fn decode_cls() {
-        assert_eq!(decode_instruction(0x00E0), Instruction::Cls);
-    }
+    fn decode_instruction_works() {
+        let cases = [
+            (0x00E0, Instruction::Cls),
+            (0x00EE, Instruction::Ret),
+            (0x1ABC, Instruction::Jmp { address: 0xABC }),
+            (0x2ABC, Instruction::Call { address: 0xABC }),
+            (
+                0x31AB,
+                Instruction::Se {
+                    reg: 0x1,
+                    val: 0xAB,
+                },
+            ),
+            (
+                0x41AB,
+                Instruction::Sne {
+                    reg: 0x1,
+                    val: 0xAB,
+                },
+            ),
+            (
+                0x5120,
+                Instruction::SeReg {
+                    reg1: 0x1,
+                    reg2: 0x2,
+                },
+            ),
+            (
+                0x61AB,
+                Instruction::Ld {
+                    reg: 0x1,
+                    val: 0xAB,
+                },
+            ),
+            (
+                0x71AB,
+                Instruction::Add {
+                    reg: 0x1,
+                    val: 0xAB,
+                },
+            ),
+            (
+                0x8AB0,
+                Instruction::LdReg {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB1,
+                Instruction::Or {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB2,
+                Instruction::And {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB3,
+                Instruction::Xor {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB4,
+                Instruction::AddReg {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB5,
+                Instruction::SubReg {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB6,
+                Instruction::Shr {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8AB7,
+                Instruction::SubN {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x8ABE,
+                Instruction::Shl {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (
+                0x9AB0,
+                Instruction::SneReg {
+                    reg1: 0xA,
+                    reg2: 0xB,
+                },
+            ),
+            (0xAABC, Instruction::Ldi { address: 0xABC }),
+        ];
 
-    #[test]
-    fn decode_ret() {
-        assert_eq!(decode_instruction(0x00EE), Instruction::Ret);
-    }
-
-    #[test]
-    fn decode_jmp() {
-        assert_eq!(
-            decode_instruction(0x1ABC),
-            Instruction::Jmp { address: 0xABC }
-        );
-    }
-
-    #[test]
-    fn decode_call() {
-        assert_eq!(
-            decode_instruction(0x2ABC),
-            Instruction::Call { address: 0xABC }
-        );
-    }
-
-    #[test]
-    fn decode_skip_equal() {
-        assert_eq!(
-            decode_instruction(0x31AB),
-            Instruction::Se {
-                reg: 0x1,
-                val: 0xAB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_skip_not_equal() {
-        assert_eq!(
-            decode_instruction(0x41AB),
-            Instruction::Sne {
-                reg: 0x1,
-                val: 0xAB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_skip_equal_registers() {
-        assert_eq!(
-            decode_instruction(0x5120),
-            Instruction::SeReg {
-                reg1: 0x1,
-                reg2: 0x2
-            }
-        );
-    }
-
-    #[test]
-    fn decode_load() {
-        assert_eq!(
-            decode_instruction(0x61AB),
-            Instruction::Ld {
-                reg: 0x1,
-                val: 0xAB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_add() {
-        assert_eq!(
-            decode_instruction(0x71AB),
-            Instruction::Add {
-                reg: 0x1,
-                val: 0xAB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_load_reg() {
-        assert_eq!(
-            decode_instruction(0x8AB0),
-            Instruction::LdReg {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_or() {
-        assert_eq!(
-            decode_instruction(0x8AB1),
-            Instruction::Or {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_and() {
-        assert_eq!(
-            decode_instruction(0x8AB2),
-            Instruction::And {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_load_xor() {
-        assert_eq!(
-            decode_instruction(0x8AB3),
-            Instruction::Xor {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_load_add_reg() {
-        assert_eq!(
-            decode_instruction(0x8AB4),
-            Instruction::AddReg {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_sub_reg() {
-        assert_eq!(
-            decode_instruction(0x8AB5),
-            Instruction::SubReg {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_shr() {
-        assert_eq!(
-            decode_instruction(0x8AB6),
-            Instruction::Shr {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_subn() {
-        assert_eq!(
-            decode_instruction(0x8AB7),
-            Instruction::SubN {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_shl() {
-        assert_eq!(
-            decode_instruction(0x8ABE),
-            Instruction::Shl {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_skip_not_equal_registers() {
-        assert_eq!(
-            decode_instruction(0x9AB0),
-            Instruction::SneReg {
-                reg1: 0xA,
-                reg2: 0xB
-            }
-        );
-    }
-
-    #[test]
-    fn decode_load_i() {
-        assert_eq!(
-            decode_instruction(0xAABC),
-            Instruction::Ldi { address: 0xABC }
-        );
+        for (input, expected) in cases.iter() {
+            assert_eq!(decode_instruction(*input), *expected);
+        }
     }
 }
