@@ -20,7 +20,7 @@ enum Instruction {
     AddReg { reg1: u8, reg2: u8 },
     SubReg { reg1: u8, reg2: u8 },
     Shr { reg1: u8, reg2: u8 },
-    SubN { reg1: u8, reg2: u8 },
+    SubRegN { reg1: u8, reg2: u8 },
     Shl { reg1: u8, reg2: u8 },
     SneReg { reg1: u8, reg2: u8 },
     Ldi { address: u16 },
@@ -65,6 +65,7 @@ struct Registers {
     pc: u16,           // program counter
     sp: u8,            // stack pointer
     i: u16,            // index register
+    vf: u8,            // the carry register
 }
 
 impl Registers {
@@ -76,6 +77,7 @@ impl Registers {
             pc: 0,
             sp: 0,
             i: 0,
+            vf: 0,
         }
     }
 }
@@ -86,9 +88,6 @@ fn main() {
     println!("welcome to my CHIP-8 emulator :)");
 
     let mut chip8 = Chip8::new();
-
-    let next_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
-    println!("next instruction is {}", next_instruction);
 }
 
 fn fetch_instruction(registers: &mut Registers, memory: &[u8; 4096]) -> u16 {
@@ -142,7 +141,7 @@ fn decode_instruction(instruction: u16) -> Instruction {
                 0x4 => Instruction::AddReg { reg1, reg2 },
                 0x5 => Instruction::SubReg { reg1, reg2 },
                 0x6 => Instruction::Shr { reg1, reg2 },
-                0x7 => Instruction::SubN { reg1, reg2 },
+                0x7 => Instruction::SubRegN { reg1, reg2 },
                 0xE => Instruction::Shl { reg1, reg2 },
                 unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
             }
@@ -198,6 +197,90 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         Instruction::Cls => {
             for byte in chip8.disp_buffer.iter_mut() {
                 *byte = 0;
+            }
+        }
+        Instruction::Ret => {
+            let address = chip8.stack[chip8.regs.sp as usize];
+            chip8.regs.pc = address;
+            if chip8.regs.sp > 0 {
+                chip8.regs.sp = chip8.regs.sp - 1;
+            }
+        }
+        Instruction::Jmp { address } => chip8.regs.pc = *address,
+        Instruction::Se { reg, val } => {
+            if chip8.regs.general[*reg as usize] == *val {
+                chip8.regs.pc = chip8.regs.pc + 2;
+            }
+        }
+        Instruction::Sne { reg, val } => {
+            if chip8.regs.general[*reg as usize] != *val {
+                chip8.regs.pc = chip8.regs.pc + 2;
+            }
+        }
+        Instruction::SeReg { reg1, reg2 } => {
+            if chip8.regs.general[*reg1 as usize] == chip8.regs.general[*reg2 as usize] {
+                chip8.regs.pc = chip8.regs.pc + 2;
+            }
+        }
+        Instruction::Ld { reg, val } => chip8.regs.general[*reg as usize] = *val,
+        Instruction::Add { reg, val } => {
+            let reg_val = chip8.regs.general[*reg as usize];
+            let result = reg_val as u32 + *val as u32;
+            chip8.regs.general[*reg as usize] = result as u8;
+        }
+        Instruction::LdReg { reg1, reg2 } => {
+            chip8.regs.general[*reg1 as usize] = chip8.regs.general[*reg2 as usize]
+        }
+        Instruction::Or { reg1, reg2 } => {
+            let result = chip8.regs.general[*reg1 as usize] | chip8.regs.general[*reg2 as usize];
+            chip8.regs.general[*reg1 as usize] = result;
+        }
+        Instruction::And { reg1, reg2 } => {
+            let result = chip8.regs.general[*reg1 as usize] & chip8.regs.general[*reg2 as usize];
+            chip8.regs.general[*reg1 as usize] = result;
+        }
+        Instruction::Xor { reg1, reg2 } => {
+            let result = chip8.regs.general[*reg1 as usize] ^ chip8.regs.general[*reg2 as usize];
+            chip8.regs.general[*reg1 as usize] = result;
+        }
+        Instruction::AddReg { reg1, reg2 } => {
+            let reg1_val = chip8.regs.general[*reg1 as usize] as u32;
+            let reg2_val = chip8.regs.general[*reg2 as usize] as u32;
+            let result = reg1_val + reg2_val;
+            chip8.regs.vf = if result > 0xFF { 0x1 } else { 0x0 };
+            chip8.regs.general[*reg1 as usize] = result as u8;
+        }
+        Instruction::SubReg { reg1, reg2 } => {
+            let reg1_val = chip8.regs.general[*reg1 as usize] as i32;
+            let reg2_val = chip8.regs.general[*reg2 as usize] as i32;
+            chip8.regs.vf = if reg1_val > reg2_val { 0x1 } else { 0x0 };
+            let result = (reg1_val - reg2_val) as u8;
+
+            chip8.regs.general[*reg1 as usize] = result as u8;
+        }
+        Instruction::Shr { reg1, .. } => {
+            // TODO: CHIP-48 and SUPER-CHIP also do VX = VY first
+            let reg1_val = chip8.regs.general[*reg1 as usize];
+            chip8.regs.vf = reg1_val & 0x01;
+            chip8.regs.general[*reg1 as usize] = reg1_val / 2;
+        }
+        Instruction::Shl { reg1, .. } => {
+            // TODO: CHIP-48 and SUPER-CHIP also do VX = VY first
+            let reg1_val = chip8.regs.general[*reg1 as usize];
+            chip8.regs.vf = if reg1_val & 0x80 > 0 { 0x1 } else { 0x0 };
+            chip8.regs.general[*reg1 as usize] = ((reg1_val as u16) * 2) as u8;
+        }
+        Instruction::SubRegN { reg1, reg2 } => {
+            let reg1_val = chip8.regs.general[*reg1 as usize] as i32;
+            let reg2_val = chip8.regs.general[*reg2 as usize] as i32;
+            chip8.regs.vf = if reg2_val > reg1_val { 0x1 } else { 0x0 };
+            let result = (reg2_val - reg1_val) as u8;
+
+            chip8.regs.general[*reg1 as usize] = result as u8;
+        }
+        Instruction::SneReg { reg1, reg2 } => {
+            if chip8.regs.general[*reg1 as usize] != chip8.regs.general[*reg2 as usize] {
+                chip8.regs.pc = chip8.regs.pc + 2;
             }
         }
         _ => panic!("Not implemented!"),
@@ -318,7 +401,7 @@ mod tests {
             ),
             (
                 0x8AB7,
-                Instruction::SubN {
+                Instruction::SubRegN {
                     reg1: 0xA,
                     reg2: 0xB,
                 },
@@ -385,5 +468,347 @@ mod tests {
         for byte in chip8.disp_buffer.iter() {
             assert_eq!(*byte, 0u8)
         }
+    }
+
+    #[test]
+    fn execute_ret_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.sp = 0;
+        chip8.stack[0] = 0x0ABC;
+
+        execute_instruction(&Instruction::Ret, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0xABC);
+        assert_eq!(chip8.regs.sp, 0)
+    }
+
+    #[test]
+    fn execute_jmp_works() {
+        let mut chip8 = Chip8::new();
+
+        execute_instruction(&Instruction::Jmp { address: 0xABC }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0xABC);
+    }
+
+    #[test]
+    fn execute_se_and_sne_works() {
+        let mut chip8 = Chip8::new();
+
+        execute_instruction(&&Instruction::Se { reg: 0x0, val: 0x0 }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x2);
+
+        execute_instruction(&&Instruction::Se { reg: 0x0, val: 0x1 }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x2);
+
+        execute_instruction(&&Instruction::Sne { reg: 0x0, val: 0x1 }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x4);
+
+        execute_instruction(&&Instruction::Sne { reg: 0x0, val: 0x0 }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x4);
+    }
+
+    #[test]
+    fn execute_se_reg_and_sne_reg_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0] = 0xA;
+        chip8.regs.general[1] = 0xB;
+        chip8.regs.general[2] = 0xA;
+
+        execute_instruction(
+            &&Instruction::SeReg {
+                reg1: 0x0,
+                reg2: 0x2,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.pc, 0x2);
+
+        execute_instruction(
+            &&Instruction::SeReg {
+                reg1: 0x0,
+                reg2: 0x1,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.pc, 0x2);
+
+        execute_instruction(
+            &&Instruction::SneReg {
+                reg1: 0x0,
+                reg2: 0x1,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.pc, 0x4);
+
+        execute_instruction(
+            &&Instruction::SneReg {
+                reg1: 0x0,
+                reg2: 0x2,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.pc, 0x4);
+    }
+
+    #[test]
+    fn execute_ld_works() {
+        let mut chip8 = Chip8::new();
+
+        execute_instruction(
+            &Instruction::Ld {
+                reg: 0xA,
+                val: 0x1F,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x1F);
+    }
+
+    #[test]
+    fn execute_add_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x5;
+
+        execute_instruction(
+            &Instruction::Add {
+                reg: 0xA,
+                val: 0x10,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x15);
+
+        // overflow
+        chip8.regs.general[0xA] = 0xFF;
+
+        execute_instruction(&Instruction::Add { reg: 0xA, val: 0x2 }, &mut chip8);
+        assert_eq!(chip8.regs.general[0xA], 0x01);
+    }
+
+    #[test]
+    fn execute_ld_reg_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x5;
+        chip8.regs.general[0xB] = 0x10;
+
+        execute_instruction(
+            &Instruction::LdReg {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x10);
+    }
+
+    #[test]
+    fn execute_or_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0xC0;
+        chip8.regs.general[0xB] = 0x0D;
+
+        execute_instruction(
+            &Instruction::Or {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0xCD);
+    }
+
+    #[test]
+    fn execute_and_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x0F;
+        chip8.regs.general[0xB] = 0xAA;
+
+        execute_instruction(
+            &Instruction::And {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x0A);
+    }
+
+    #[test]
+    fn execute_xor_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x0F;
+        chip8.regs.general[0xB] = 0xAA;
+
+        execute_instruction(
+            &Instruction::Xor {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0xA5);
+    }
+
+    #[test]
+    fn execute_add_reg_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x11;
+        chip8.regs.general[0xB] = 0x05;
+
+        execute_instruction(
+            &Instruction::AddReg {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x16);
+        assert_eq!(chip8.regs.vf, 0x0);
+
+        // overflow
+        chip8.regs.general[0xA] = 0xFF;
+        chip8.regs.general[0xB] = 0x02;
+
+        execute_instruction(
+            &Instruction::AddReg {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x01);
+        assert_eq!(chip8.regs.vf, 0x1);
+    }
+
+    #[test]
+    fn execute_sub_reg_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x09;
+        chip8.regs.general[0xB] = 0x04;
+
+        execute_instruction(
+            &Instruction::SubReg {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x05);
+        assert_eq!(chip8.regs.vf, 0x1);
+
+        // overflow
+        chip8.regs.general[0xA] = 0x00;
+        chip8.regs.general[0xB] = 0x02;
+
+        execute_instruction(
+            &Instruction::SubReg {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0xFE);
+        assert_eq!(chip8.regs.vf, 0x0);
+    }
+
+    #[test]
+    fn execute_sub_reg_n_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x04;
+        chip8.regs.general[0xB] = 0x09;
+
+        execute_instruction(
+            &Instruction::SubRegN {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x05);
+        assert_eq!(chip8.regs.vf, 0x1);
+
+        // overflow
+        chip8.regs.general[0xA] = 0x02;
+        chip8.regs.general[0xB] = 0x00;
+
+        execute_instruction(
+            &Instruction::SubRegN {
+                reg1: 0xA,
+                reg2: 0xB,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0xFE);
+        assert_eq!(chip8.regs.vf, 0x0);
+    }
+
+    #[test]
+    fn execute_shr_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x8;
+
+        execute_instruction(
+            &Instruction::Shr {
+                reg1: 0xA,
+                reg2: 0x0,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x04);
+        assert_eq!(chip8.regs.vf, 0x0);
+
+        // overflow
+        chip8.regs.general[0xA] = 0x5;
+
+        execute_instruction(
+            &Instruction::Shr {
+                reg1: 0xA,
+                reg2: 0x0,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x02);
+        assert_eq!(chip8.regs.vf, 0x1);
+    }
+
+    #[test]
+    fn execute_shl_works() {
+        let mut chip8 = Chip8::new();
+
+        // no overflow
+        chip8.regs.general[0xA] = 0x4;
+
+        execute_instruction(
+            &Instruction::Shl {
+                reg1: 0xA,
+                reg2: 0x0,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x08);
+        assert_eq!(chip8.regs.vf, 0x0);
+
+        // overflow
+        chip8.regs.general[0xA] = 0x81;
+
+        execute_instruction(
+            &Instruction::Shl {
+                reg1: 0xA,
+                reg2: 0x0,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x2);
+        assert_eq!(chip8.regs.vf, 0x1);
     }
 }
