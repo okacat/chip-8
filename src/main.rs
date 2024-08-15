@@ -1,3 +1,7 @@
+const DISP_BUFFER_SIZE: usize = (64 / 8) * (32 / 8);
+const STACK_SIZE: usize = 16;
+const MEMORY_SIZE: usize = 4096;
+
 #[derive(PartialEq, Eq, Debug)]
 enum Instruction {
     Cls,
@@ -36,6 +40,24 @@ enum Instruction {
     LdMemRegs { reg: u8 },
 }
 
+struct Chip8 {
+    regs: Registers,
+    disp_buffer: [u8; DISP_BUFFER_SIZE],
+    stack: [u16; 16],
+    memory: [u8; 4096],
+}
+
+impl Chip8 {
+    fn new() -> Chip8 {
+        Chip8 {
+            regs: Registers::new(),
+            disp_buffer: [0; DISP_BUFFER_SIZE],
+            stack: [0; STACK_SIZE],
+            memory: [0; MEMORY_SIZE],
+        }
+    }
+}
+
 struct Registers {
     general: [u8; 16], // general purpose registers
     dt: u8,            // delay timer
@@ -63,15 +85,9 @@ fn main() {
     println!("");
     println!("welcome to my CHIP-8 emulator :)");
 
-    let mut registers = Registers::new();
-    let mut stack: [u16; 16] = [0; 16];
-    let mut memory: [u8; 4096] = [0; 4096];
+    let mut chip8 = Chip8::new();
 
-    // quick test
-    memory[0] = 1;
-    memory[1] = 2;
-
-    let next_instruction = fetch_instruction(&mut registers, &memory);
+    let next_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
     println!("next instruction is {}", next_instruction);
 }
 
@@ -177,6 +193,17 @@ fn decode_instruction(instruction: u16) -> Instruction {
     }
 }
 
+fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
+    match ins {
+        Instruction::Cls => {
+            for byte in chip8.disp_buffer.iter_mut() {
+                *byte = 0;
+            }
+        }
+        _ => panic!("Not implemented!"),
+    }
+}
+
 /// Gets the i-th nibble (half-byte) from x
 /// # Example
 /// ```
@@ -188,7 +215,7 @@ fn get_nibble_u16(x: u16, i: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{decode_instruction, get_nibble_u16, Instruction};
+    use crate::{decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction};
 
     #[test]
     fn get_nibble_u16_works() {
@@ -342,6 +369,21 @@ mod tests {
 
         for (input, expected) in cases.iter() {
             assert_eq!(decode_instruction(*input), *expected);
+        }
+    }
+
+    #[test]
+    fn execute_cls_works() {
+        let mut chip8 = Chip8::new();
+        for (i, byte) in chip8.disp_buffer.iter_mut().enumerate() {
+            *byte = (i % 0xFF) as u8;
+        }
+        chip8.disp_buffer[0] = 0xFF;
+
+        execute_instruction(&Instruction::Cls, &mut chip8);
+
+        for byte in chip8.disp_buffer.iter() {
+            assert_eq!(*byte, 0u8)
         }
     }
 }
