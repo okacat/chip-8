@@ -72,39 +72,42 @@ fn fetch_instruction(registers: &mut Registers, memory: &[u8; 4096]) -> u16 {
 }
 
 fn decode_instruction(instruction: u16) -> Instruction {
-    return match instruction {
-        0x00E0 => Instruction::Cls,
-        0x00EE => Instruction::Ret,
-        x if get_nibble_u16(x, 3) == 0x1 => Instruction::Jmp {
-            address: 0x0FFF & x,
+    match get_nibble_u16(instruction, 3) {
+        0x0 => match instruction {
+            0x00E0 => Instruction::Cls,
+            0x00EE => Instruction::Ret,
+            _ => panic!("Instruction #X{} not recognized", instruction),
         },
-        x if get_nibble_u16(x, 3) == 0x2 => Instruction::Call {
-            address: 0x0FFF & x,
+        0x1 => Instruction::Jmp {
+            address: instruction & 0x0FFF,
         },
-        x if get_nibble_u16(x, 3) == 0x03 => Instruction::Se {
-            reg: get_nibble_u16(x, 2),
-            val: (x & 0xFF) as u8,
+        0x2 => Instruction::Call {
+            address: instruction & 0x0FFF,
         },
-        x if get_nibble_u16(x, 3) == 0x04 => Instruction::Sne {
-            reg: get_nibble_u16(x, 2),
-            val: (x & 0xFF) as u8,
+        0x3 => Instruction::Se {
+            reg: get_nibble_u16(instruction, 2),
+            val: (instruction & 0xFF) as u8,
         },
-        x if get_nibble_u16(x, 3) == 0x05 => Instruction::SeReg {
-            reg1: get_nibble_u16(x, 2),
-            reg2: get_nibble_u16(x, 1),
+        0x4 => Instruction::Sne {
+            reg: get_nibble_u16(instruction, 2),
+            val: (instruction & 0xFF) as u8,
         },
-        x if get_nibble_u16(x, 3) == 0x06 => Instruction::Ld {
-            reg: get_nibble_u16(x, 2),
-            val: (x & 0xFF) as u8,
+        0x5 => Instruction::SeReg {
+            reg1: get_nibble_u16(instruction, 2),
+            reg2: get_nibble_u16(instruction, 1),
         },
-        x if get_nibble_u16(x, 3) == 0x07 => Instruction::Add {
-            reg: get_nibble_u16(x, 2),
-            val: (x & 0xFF) as u8,
+        0x6 => Instruction::Ld {
+            reg: get_nibble_u16(instruction, 2),
+            val: (instruction & 0xFF) as u8,
         },
-        x if get_nibble_u16(x, 3) == 0x08 => {
-            let reg1 = get_nibble_u16(x, 2);
-            let reg2 = get_nibble_u16(x, 1);
-            match get_nibble_u16(x, 0) {
+        0x7 => Instruction::Add {
+            reg: get_nibble_u16(instruction, 2),
+            val: (instruction & 0xFF) as u8,
+        },
+        0x8 => {
+            let reg1 = get_nibble_u16(instruction, 2);
+            let reg2 = get_nibble_u16(instruction, 1);
+            match get_nibble_u16(instruction, 0) {
                 0x0 => Instruction::LdReg { reg1, reg2 },
                 0x1 => Instruction::Or { reg1, reg2 },
                 0x2 => Instruction::And { reg1, reg2 },
@@ -117,15 +120,15 @@ fn decode_instruction(instruction: u16) -> Instruction {
                 unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
             }
         }
-        x if get_nibble_u16(x, 3) == 0x09 => Instruction::SneReg {
-            reg1: get_nibble_u16(x, 2),
-            reg2: get_nibble_u16(x, 1),
+        0x9 => Instruction::SneReg {
+            reg1: get_nibble_u16(instruction, 2),
+            reg2: get_nibble_u16(instruction, 1),
         },
-        x if get_nibble_u16(x, 3) == 0x0A => Instruction::Ldi {
-            address: (x & 0xFFF) as u16,
+        0xA => Instruction::Ldi {
+            address: (instruction & 0x0FFF) as u16,
         },
         _ => panic!("Instruction #X{} not recognized", instruction),
-    };
+    }
 }
 
 /// Gets the i-th nibble (half-byte) from x
