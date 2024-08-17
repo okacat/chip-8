@@ -283,6 +283,15 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
                 chip8.regs.pc = chip8.regs.pc + 2;
             }
         }
+        Instruction::Ldi { address } => chip8.regs.i = *address,
+        Instruction::JmpV0 { address } => {
+            chip8.regs.pc = chip8.regs.general[0] as u16 + *address;
+        }
+        Instruction::Rnd { reg, mask } => {
+            let rnd_val = fastrand::u8(..);
+            let result = rnd_val as u8 & *mask;
+            chip8.regs.general[*reg as usize] = result;
+        }
         _ => panic!("Not implemented!"),
     }
 }
@@ -810,5 +819,22 @@ mod tests {
         );
         assert_eq!(chip8.regs.general[0xA], 0x2);
         assert_eq!(chip8.regs.vf, 0x1);
+    }
+
+    #[test]
+    fn execute_ldi_works() {
+        let mut chip8 = Chip8::new();
+
+        execute_instruction(&Instruction::Ldi { address: 0xABC }, &mut chip8);
+        assert_eq!(chip8.regs.i, 0xABC);
+    }
+
+    #[test]
+    fn execute_jmp_v0_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0] = 0x5;
+
+        execute_instruction(&Instruction::JmpV0 { address: 0xABC }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0xAC1);
     }
 }
