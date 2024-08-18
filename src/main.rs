@@ -444,7 +444,9 @@ fn get_nibble_u16(x: u16, i: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction};
+    use crate::{
+        decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction, SCREEN_HEIGHT,
+    };
 
     #[test]
     fn get_nibble_u16_works() {
