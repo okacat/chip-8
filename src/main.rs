@@ -38,8 +38,8 @@ enum Instruction {
     AddI { reg: u8 },
     LdF { reg: u8 },
     LdB { reg: u8 },
-    LdRegsMem { reg: u8 },
-    LdMemRegs { reg: u8 },
+    LdRegsMem { end_reg: u8 },
+    LdMemRegs { end_reg: u8 },
 }
 
 struct Chip8 {
@@ -195,8 +195,8 @@ fn decode_instruction(instruction: u16) -> Instruction {
                 0x1E => Instruction::AddI { reg },
                 0x29 => Instruction::LdF { reg },
                 0x33 => Instruction::LdB { reg },
-                0x55 => Instruction::LdRegsMem { reg },
-                0x65 => Instruction::LdMemRegs { reg },
+                0x55 => Instruction::LdRegsMem { end_reg: reg },
+                0x65 => Instruction::LdMemRegs { end_reg: reg },
                 unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
             }
         }
@@ -369,6 +369,31 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
                 chip8.regs.pc -= 2;
             }
         }
+        Instruction::LdSt { reg } => chip8.regs.st = chip8.regs.general[*reg as usize],
+        Instruction::AddI { reg } => chip8.regs.i += chip8.regs.general[*reg as usize] as u16,
+        Instruction::LdF { reg } => chip8.regs.i = chip8.regs.general[*reg as usize] as u16 * 0x5,
+        Instruction::LdB { reg } => {
+            let val = chip8.regs.general[*reg as usize];
+            let hundreds = val / 100;
+            let tens = (val - hundreds * 100) / 10;
+            let ones = val % 10;
+            let i = chip8.regs.i as usize;
+            chip8.memory[i] = hundreds;
+            chip8.memory[i + 1] = tens;
+            chip8.memory[i + 2] = ones;
+        }
+        Instruction::LdRegsMem { end_reg } => {
+            for reg in 0..=*end_reg as usize {
+                let addr = chip8.regs.i as usize + reg as usize;
+                chip8.memory[addr] = chip8.regs.general[reg];
+            }
+        }
+        Instruction::LdMemRegs { end_reg } => {
+            for reg in 0..=*end_reg as usize {
+                let addr = chip8.regs.i as usize + reg as usize;
+                chip8.regs.general[reg] = chip8.memory[addr];
+            }
+        }
         _ => panic!("Not implemented!"),
     }
 }
@@ -535,8 +560,8 @@ mod tests {
             (0xF11E, Instruction::AddI { reg: 0x1 }),
             (0xF129, Instruction::LdF { reg: 0x1 }),
             (0xF133, Instruction::LdB { reg: 0x1 }),
-            (0xF155, Instruction::LdRegsMem { reg: 0x1 }),
-            (0xF165, Instruction::LdMemRegs { reg: 0x1 }),
+            (0xF155, Instruction::LdRegsMem { end_reg: 0x1 }),
+            (0xF165, Instruction::LdMemRegs { end_reg: 0x1 }),
         ];
 
         for (input, expected) in cases.iter() {
@@ -1096,5 +1121,78 @@ mod tests {
         execute_instruction(&Instruction::LdKey { reg: 0xA }, &mut chip8);
         assert_eq!(chip8.regs.pc, 0x0); // pc back 2 counts
         assert_eq!(chip8.regs.general[0xA], 0x0);
+    }
+
+    #[test]
+    fn execute_ld_st_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x12;
+
+        execute_instruction(&Instruction::LdSt { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.st, 0x12);
+    }
+
+    #[test]
+    fn execute_add_i_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.i = 0x05;
+        chip8.regs.general[0xA] = 0x12;
+
+        execute_instruction(&Instruction::AddI { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.i, 0x17);
+    }
+
+    #[test]
+    fn execute_ld_f_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x12;
+
+        execute_instruction(&Instruction::LdF { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.i, 0x5A);
+    }
+
+    #[test]
+    fn execute_ld_b_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 234;
+        chip8.regs.i = 0x300;
+
+        // breaks the decimal into digits and stores them at consecutive addresses
+        execute_instruction(&Instruction::LdB { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.memory[0x300], 2);
+        assert_eq!(chip8.memory[0x301], 3);
+        assert_eq!(chip8.memory[0x302], 4);
+    }
+
+    #[test]
+    fn execute_ld_regs_mem_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0x0] = 0xA;
+        chip8.regs.general[0x1] = 0xB;
+        chip8.regs.general[0x2] = 0xC;
+        chip8.regs.general[0x3] = 0xD;
+        chip8.regs.i = 0x300;
+
+        execute_instruction(&Instruction::LdRegsMem { end_reg: 0x2 }, &mut chip8);
+        assert_eq!(chip8.memory[0x300], 0xA);
+        assert_eq!(chip8.memory[0x301], 0xB);
+        assert_eq!(chip8.memory[0x302], 0xC);
+        assert_eq!(chip8.memory[0x303], 0x0); // load only up to 0x2 reg
+    }
+
+    #[test]
+    fn execute_ld_mem_regs_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.i = 0x300;
+        chip8.memory[0x300] = 0xA;
+        chip8.memory[0x301] = 0xB;
+        chip8.memory[0x302] = 0xC;
+        chip8.memory[0x303] = 0xD;
+
+        execute_instruction(&Instruction::LdMemRegs { end_reg: 0x2 }, &mut chip8);
+        assert_eq!(chip8.regs.general[0x0], 0xA);
+        assert_eq!(chip8.regs.general[0x1], 0xB);
+        assert_eq!(chip8.regs.general[0x2], 0xC);
+        assert_eq!(chip8.regs.general[0x3], 0x0);
     }
 }
