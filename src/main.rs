@@ -68,6 +68,22 @@ impl Chip8 {
     fn set_px(&mut self, x: u8, y: u8, val: u8) {
         return self.disp_buffer[y as usize * SCREEN_WIDTH as usize + x as usize] = val;
     }
+
+    fn dbg_print_display(&self) {
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_WIDTH {
+                print!("{} ", if self.get_px(x, y) > 0 { "O" } else { "." });
+            }
+            println!()
+        }
+        println!()
+    }
+
+    fn load_into_mem(&mut self, data: &Vec<u8>, start_addr: u16) {
+        for (i, byte) in data.iter().enumerate() {
+            self.memory[start_addr as usize + i] = *byte;
+        }
+    }
 }
 
 struct Registers {
@@ -94,12 +110,27 @@ impl Registers {
     }
 }
 
+fn load_file(name: &str) -> Vec<u8> {
+    return std::fs::read(["./roms/", name].join("")).unwrap();
+}
+
 fn main() {
     println!("CHIP-8");
     println!("");
     println!("welcome to my CHIP-8 emulator :)");
 
     let mut chip8 = Chip8::new();
+
+    let rom = load_file("test_opcode.ch8");
+    chip8.load_into_mem(&rom, 0x200);
+    chip8.regs.pc = 0x200;
+
+    loop {
+        let raw_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
+        let instruction = decode_instruction(raw_instruction);
+        execute_instruction(&instruction, &mut chip8);
+        chip8.dbg_print_display();
+    }
 }
 
 fn fetch_instruction(registers: &mut Registers, memory: &[u8; 4096]) -> u16 {
@@ -114,7 +145,7 @@ fn decode_instruction(instruction: u16) -> Instruction {
         0x0 => match instruction {
             0x00E0 => Instruction::Cls,
             0x00EE => Instruction::Ret,
-            _ => panic!("Instruction #X{} not recognized", instruction),
+            _ => panic!("Instruction {} not recognized", instruction),
         },
         0x1 => Instruction::Jmp {
             address: instruction & 0x0FFF,
@@ -219,6 +250,11 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
             }
         }
         Instruction::Jmp { address } => chip8.regs.pc = *address,
+        Instruction::Call { address } => {
+            chip8.regs.sp += 1;
+            chip8.stack[chip8.regs.sp as usize] = chip8.regs.pc;
+            chip8.regs.pc = *address;
+        }
         Instruction::Se { reg, val } => {
             if chip8.regs.general[*reg as usize] == *val {
                 chip8.regs.pc += 2;
@@ -394,7 +430,6 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
                 chip8.regs.general[reg] = chip8.memory[addr];
             }
         }
-        _ => panic!("Not implemented!"),
     }
 }
 
@@ -409,10 +444,7 @@ fn get_nibble_u16(x: u16, i: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction, SCREEN_HEIGHT,
-        SCREEN_WIDTH,
-    };
+    use crate::{decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction};
 
     #[test]
     fn get_nibble_u16_works() {
@@ -600,6 +632,17 @@ mod tests {
 
         execute_instruction(&Instruction::Jmp { address: 0xABC }, &mut chip8);
         assert_eq!(chip8.regs.pc, 0xABC);
+    }
+
+    #[test]
+    fn execute_call_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.pc = 0x123;
+
+        execute_instruction(&Instruction::Call { address: 0xABC }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0xABC);
+        assert_eq!(chip8.regs.sp, 1);
+        assert_eq!(chip8.stack[1], 0x123);
     }
 
     #[test]
@@ -984,16 +1027,6 @@ mod tests {
         chip8.regs.general[0xA] = 10;
         chip8.regs.general[0xB] = 5;
 
-        let dbg_print_display = |chip8: &mut Chip8| {
-            for y in 0..SCREEN_HEIGHT {
-                for x in 0..SCREEN_WIDTH {
-                    print!("{} ", if chip8.get_px(x, y) > 0 { "O" } else { "." });
-                }
-                println!()
-            }
-            println!()
-        };
-
         // draw sprite
         execute_instruction(
             &Instruction::Drw {
@@ -1004,7 +1037,7 @@ mod tests {
             &mut chip8,
         );
 
-        dbg_print_display(&mut chip8);
+        chip8.dbg_print_display();
         for x in 10..18 {
             for y in 5..8 {
                 assert_eq!(chip8.get_px(x, y), 0x1);
@@ -1021,7 +1054,7 @@ mod tests {
             },
             &mut chip8,
         );
-        dbg_print_display(&mut chip8);
+        chip8.dbg_print_display();
         for byte in chip8.disp_buffer.iter() {
             assert_eq!(*byte, 0x0);
         }
@@ -1038,7 +1071,7 @@ mod tests {
             },
             &mut chip8,
         );
-        dbg_print_display(&mut chip8);
+        chip8.dbg_print_display();
         for x in 10..18 {
             for y in 5..8 {
                 assert_eq!(chip8.get_px(x, y), 0x1);
@@ -1057,7 +1090,7 @@ mod tests {
             },
             &mut chip8,
         );
-        dbg_print_display(&mut chip8);
+        chip8.dbg_print_display();
         for x in 62..64 {
             for y in 30..32 {
                 assert_eq!(chip8.get_px(x, y), 0x1);
