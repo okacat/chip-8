@@ -29,8 +29,8 @@ enum Instruction {
     JmpV0 { address: u16 },
     Rnd { reg: u8, mask: u8 },
     Drw { reg1: u8, reg2: u8, n_bytes: u8 },
-    Skp { key: u8 },
-    SkpNp { key: u8 },
+    Skp { reg: u8 },
+    SkpNp { reg: u8 },
     LdFromDt { reg: u8 },
     LdKey { reg: u8 },
     LdIntoDt { reg: u8 },
@@ -47,6 +47,7 @@ struct Chip8 {
     disp_buffer: [u8; DISP_BUFFER_SIZE],
     stack: [u16; 16],
     memory: [u8; 4096],
+    key_down: [bool; 16],
 }
 
 impl Chip8 {
@@ -56,6 +57,7 @@ impl Chip8 {
             disp_buffer: [0; DISP_BUFFER_SIZE],
             stack: [0; STACK_SIZE],
             memory: [0; MEMORY_SIZE],
+            key_down: [false; 16],
         }
     }
 
@@ -176,10 +178,10 @@ fn decode_instruction(instruction: u16) -> Instruction {
             n_bytes: get_nibble_u16(instruction, 0),
         },
         0xE => {
-            let key = get_nibble_u16(instruction, 2);
+            let reg = get_nibble_u16(instruction, 2);
             match (instruction & 0xFF) as u8 {
-                0x9E => Instruction::Skp { key },
-                0xA1 => Instruction::SkpNp { key },
+                0x9E => Instruction::Skp { reg },
+                0xA1 => Instruction::SkpNp { reg },
                 unknown_op => panic!("Opcode #X{} not recognized for group E", unknown_op),
             }
         }
@@ -334,6 +336,24 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
                     chip8.set_px(cx, cy, disp_bit ^ sprite_bit);
                 }
             }
+        }
+        Instruction::Skp { reg } => {
+            let key = chip8.regs.general[*reg as usize];
+            if chip8.key_down[key as usize] {
+                chip8.regs.pc = chip8.regs.pc + 2;
+            }
+        }
+        Instruction::SkpNp { reg } => {
+            let key = chip8.regs.general[*reg as usize];
+            if !chip8.key_down[key as usize] {
+                chip8.regs.pc = chip8.regs.pc + 2;
+            }
+        }
+        Instruction::LdFromDt { reg } => {
+            chip8.regs.general[*reg as usize] = chip8.regs.dt;
+        }
+        Instruction::LdIntoDt { reg } => {
+            chip8.regs.dt = chip8.regs.general[*reg as usize];
         }
         _ => panic!("Not implemented!"),
     }
@@ -492,8 +512,8 @@ mod tests {
                     n_bytes: 0x5,
                 },
             ),
-            (0xE19E, Instruction::Skp { key: 0x1 }),
-            (0xE2A1, Instruction::SkpNp { key: 0x2 }),
+            (0xE19E, Instruction::Skp { reg: 0x1 }),
+            (0xE2A1, Instruction::SkpNp { reg: 0x2 }),
             (0xF107, Instruction::LdFromDt { reg: 0x1 }),
             (0xF10A, Instruction::LdKey { reg: 0x1 }),
             (0xF115, Instruction::LdIntoDt { reg: 0x1 }),
@@ -1005,5 +1025,43 @@ mod tests {
             }
         }
         assert_eq!(chip8.regs.vf, 0x0);
+    }
+
+    #[test]
+    fn execute_skp_and_sknp_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.general[0xA] = 0x5;
+        chip8.regs.general[0xB] = 0x6;
+        chip8.key_down[0x6] = true;
+
+        // SKP: no skip, key is not down
+        execute_instruction(&Instruction::Skp { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x0);
+
+        // SKP: skip, key is down
+        execute_instruction(&Instruction::Skp { reg: 0xB }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x2);
+
+        // SKNP: no skip, key is down
+        execute_instruction(&Instruction::SkpNp { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x4);
+
+        // SKNP: skip, key is down
+        execute_instruction(&Instruction::SkpNp { reg: 0xB }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x4);
+    }
+
+    #[test]
+    fn execute_ld_dt_works() {
+        let mut chip8 = Chip8::new();
+        chip8.regs.dt = 0x12;
+
+        // Ld from DT
+        execute_instruction(&Instruction::LdFromDt { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.dt, 0x12);
+
+        // Ld into DT
+        execute_instruction(&Instruction::LdFromDt { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.dt, 0x12);
     }
 }
