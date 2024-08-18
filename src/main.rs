@@ -1,4 +1,6 @@
-const DISP_BUFFER_SIZE: usize = (64 / 8) * (32 / 8);
+const SCREEN_WIDTH: u8 = 64;
+const SCREEN_HEIGHT: u8 = 32;
+const DISP_BUFFER_SIZE: usize = SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize;
 const STACK_SIZE: usize = 16;
 const MEMORY_SIZE: usize = 4096;
 
@@ -55,6 +57,14 @@ impl Chip8 {
             stack: [0; STACK_SIZE],
             memory: [0; MEMORY_SIZE],
         }
+    }
+
+    fn get_px(&self, x: u8, y: u8) -> u8 {
+        return self.disp_buffer[y as usize * SCREEN_WIDTH as usize + x as usize];
+    }
+
+    fn set_px(&mut self, x: u8, y: u8, val: u8) {
+        return self.disp_buffer[y as usize * SCREEN_WIDTH as usize + x as usize] = val;
     }
 }
 
@@ -292,6 +302,39 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
             let result = rnd_val as u8 & *mask;
             chip8.regs.general[*reg as usize] = result;
         }
+        Instruction::Drw {
+            reg1,
+            reg2,
+            n_bytes,
+        } => {
+            let x = chip8.regs.general[*reg1 as usize] % SCREEN_WIDTH;
+            let y = chip8.regs.general[*reg2 as usize] % SCREEN_HEIGHT;
+            chip8.regs.vf = 0;
+
+            for row in 0..*n_bytes as usize {
+                let sprite_row = chip8.memory[chip8.regs.i as usize + row];
+                let cy = y + row as u8;
+                if cy >= SCREEN_HEIGHT {
+                    break;
+                };
+                for bit_i in 0..8 {
+                    let cx = x + bit_i;
+                    if cx >= SCREEN_WIDTH {
+                        break;
+                    }
+                    let sprite_bit = if sprite_row & 0x80 >> bit_i > 0 {
+                        0x1
+                    } else {
+                        0x0
+                    };
+                    let disp_bit = chip8.get_px(cx, cy);
+                    if sprite_bit > 0 && disp_bit > 0 {
+                        chip8.regs.vf = 0x1;
+                    }
+                    chip8.set_px(cx, cy, disp_bit ^ sprite_bit);
+                }
+            }
+        }
         _ => panic!("Not implemented!"),
     }
 }
@@ -307,7 +350,10 @@ fn get_nibble_u16(x: u16, i: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction};
+    use crate::{
+        decode_instruction, execute_instruction, get_nibble_u16, Chip8, Instruction, SCREEN_HEIGHT,
+        SCREEN_WIDTH,
+    };
 
     #[test]
     fn get_nibble_u16_works() {
@@ -467,15 +513,14 @@ mod tests {
     #[test]
     fn execute_cls_works() {
         let mut chip8 = Chip8::new();
-        for (i, byte) in chip8.disp_buffer.iter_mut().enumerate() {
-            *byte = (i % 0xFF) as u8;
+        for byte in chip8.disp_buffer.iter_mut() {
+            *byte = 0xFF;
         }
-        chip8.disp_buffer[0] = 0xFF;
 
         execute_instruction(&Instruction::Cls, &mut chip8);
 
         for byte in chip8.disp_buffer.iter() {
-            assert_eq!(*byte, 0u8)
+            assert_eq!(*byte, 0u8);
         }
     }
 
@@ -836,5 +881,129 @@ mod tests {
 
         execute_instruction(&Instruction::JmpV0 { address: 0xABC }, &mut chip8);
         assert_eq!(chip8.regs.pc, 0xAC1);
+    }
+
+    #[test]
+    fn execute_rnd_works() {
+        let mut chip8 = Chip8::new();
+
+        fastrand::seed(42);
+        // get the first 2 random numbers
+        // let r = fastrand::u8(..);
+        // assert_eq!(r, 0x89);
+        // let r = fastrand::u8(..);
+        // assert_eq!(r, 0xC6);
+
+        execute_instruction(
+            &Instruction::Rnd {
+                reg: 0xA,
+                mask: 0xFF,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xA], 0x89);
+
+        execute_instruction(
+            &Instruction::Rnd {
+                reg: 0xB,
+                mask: 0x0F,
+            },
+            &mut chip8,
+        );
+        assert_eq!(chip8.regs.general[0xB], 0x06);
+    }
+
+    #[test]
+    fn execute_drw_works() {
+        let mut chip8 = Chip8::new();
+
+        let spr_addr = 0x200;
+        chip8.regs.i = spr_addr;
+        chip8.memory[0x200] = 0b11111111;
+        chip8.memory[0x201] = 0b11111111;
+        chip8.memory[0x202] = 0b11111111;
+        chip8.regs.general[0xA] = 10;
+        chip8.regs.general[0xB] = 5;
+
+        let dbg_print_display = |chip8: &mut Chip8| {
+            for y in 0..SCREEN_HEIGHT {
+                for x in 0..SCREEN_WIDTH {
+                    print!("{} ", if chip8.get_px(x, y) > 0 { "O" } else { "." });
+                }
+                println!()
+            }
+            println!()
+        };
+
+        // draw sprite
+        execute_instruction(
+            &Instruction::Drw {
+                reg1: 0xA,
+                reg2: 0xB,
+                n_bytes: 3,
+            },
+            &mut chip8,
+        );
+
+        dbg_print_display(&mut chip8);
+        for x in 10..18 {
+            for y in 5..8 {
+                assert_eq!(chip8.get_px(x, y), 0x1);
+            }
+        }
+        assert_eq!(chip8.regs.vf, 0x0);
+
+        // re-draw sprite over the old one, it should clear the display
+        execute_instruction(
+            &Instruction::Drw {
+                reg1: 0xA,
+                reg2: 0xB,
+                n_bytes: 3,
+            },
+            &mut chip8,
+        );
+        dbg_print_display(&mut chip8);
+        for byte in chip8.disp_buffer.iter() {
+            assert_eq!(*byte, 0x0);
+        }
+        assert_eq!(chip8.regs.vf, 0x1);
+
+        // draw the sprite at x and y higher than screen coord, it should wrap
+        chip8.regs.general[0xA] = 10 + 64;
+        chip8.regs.general[0xB] = 5 + 32;
+        execute_instruction(
+            &Instruction::Drw {
+                reg1: 0xA,
+                reg2: 0xB,
+                n_bytes: 3,
+            },
+            &mut chip8,
+        );
+        dbg_print_display(&mut chip8);
+        for x in 10..18 {
+            for y in 5..8 {
+                assert_eq!(chip8.get_px(x, y), 0x1);
+            }
+        }
+        assert_eq!(chip8.regs.vf, 0x0);
+
+        // draw the sprite in the corner, the rest of it shouldn't wrap
+        chip8.regs.general[0xA] = 62;
+        chip8.regs.general[0xB] = 30;
+        execute_instruction(
+            &Instruction::Drw {
+                reg1: 0xA,
+                reg2: 0xB,
+                n_bytes: 3,
+            },
+            &mut chip8,
+        );
+        dbg_print_display(&mut chip8);
+        for x in 62..64 {
+            for y in 30..32 {
+                assert_eq!(chip8.get_px(x, y), 0x1);
+            }
+        }
+        assert_eq!(chip8.regs.vf, 0x0);
     }
 }
