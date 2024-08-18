@@ -215,23 +215,23 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
             let address = chip8.stack[chip8.regs.sp as usize];
             chip8.regs.pc = address;
             if chip8.regs.sp > 0 {
-                chip8.regs.sp = chip8.regs.sp - 1;
+                chip8.regs.sp -= 1;
             }
         }
         Instruction::Jmp { address } => chip8.regs.pc = *address,
         Instruction::Se { reg, val } => {
             if chip8.regs.general[*reg as usize] == *val {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::Sne { reg, val } => {
             if chip8.regs.general[*reg as usize] != *val {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::SeReg { reg1, reg2 } => {
             if chip8.regs.general[*reg1 as usize] == chip8.regs.general[*reg2 as usize] {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::Ld { reg, val } => chip8.regs.general[*reg as usize] = *val,
@@ -292,7 +292,7 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         }
         Instruction::SneReg { reg1, reg2 } => {
             if chip8.regs.general[*reg1 as usize] != chip8.regs.general[*reg2 as usize] {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::Ldi { address } => chip8.regs.i = *address,
@@ -340,13 +340,13 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         Instruction::Skp { reg } => {
             let key = chip8.regs.general[*reg as usize];
             if chip8.key_down[key as usize] {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::SkpNp { reg } => {
             let key = chip8.regs.general[*reg as usize];
             if !chip8.key_down[key as usize] {
-                chip8.regs.pc = chip8.regs.pc + 2;
+                chip8.regs.pc += 2;
             }
         }
         Instruction::LdFromDt { reg } => {
@@ -354,6 +354,20 @@ fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         }
         Instruction::LdIntoDt { reg } => {
             chip8.regs.dt = chip8.regs.general[*reg as usize];
+        }
+        Instruction::LdKey { reg } => {
+            let mut was_key_pressed = false;
+            for (key, is_down) in chip8.key_down.iter().enumerate() {
+                if *is_down {
+                    chip8.regs.general[*reg as usize] = key as u8;
+                    was_key_pressed = true;
+                    break;
+                }
+            }
+            // repeat instruction if no key was pressed
+            if !was_key_pressed {
+                chip8.regs.pc -= 2;
+            }
         }
         _ => panic!("Not implemented!"),
     }
@@ -1063,5 +1077,24 @@ mod tests {
         // Ld into DT
         execute_instruction(&Instruction::LdFromDt { reg: 0xA }, &mut chip8);
         assert_eq!(chip8.regs.dt, 0x12);
+    }
+
+    #[test]
+    fn execute_ld_key_works() {
+        let mut chip8 = Chip8::new();
+
+        // key 5 was down
+        chip8.key_down[5] = true;
+        execute_instruction(&Instruction::LdKey { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x0); // no change to pc
+        assert_eq!(chip8.regs.general[0xA], 0x5);
+
+        // key 5 was down
+        chip8.key_down[5] = false;
+        chip8.regs.general[0xA] = 0;
+        chip8.regs.pc += 2; // simulate pc increment
+        execute_instruction(&Instruction::LdKey { reg: 0xA }, &mut chip8);
+        assert_eq!(chip8.regs.pc, 0x0); // pc back 2 counts
+        assert_eq!(chip8.regs.general[0xA], 0x0);
     }
 }
