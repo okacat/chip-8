@@ -20,10 +20,9 @@ fn main() {
     println!("");
     println!("welcome to my CHIP-8 emulator :)");
 
+    let rom = load_file("Tetris [Fran Dachille, 1991].ch8");
     let mut chip8 = Chip8::new();
-
-    // let rom = load_file("test_opcode.ch8");
-    let rom = load_file("IBM Logo.ch8");
+    chip8.load_font();
     chip8.load_into_mem(&rom, 0x200);
     chip8.regs.pc = 0x200;
 
@@ -54,6 +53,22 @@ fn main() {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
+                Event::KeyDown {
+                    keycode: Some(keycode),
+                    ..
+                } => {
+                    if let Some(key) = keycode_to_button(keycode) {
+                        chip8.key_down[key] = true;
+                    }
+                }
+                Event::KeyUp {
+                    keycode: Some(keycode),
+                    ..
+                } => {
+                    if let Some(key) = keycode_to_button(keycode) {
+                        chip8.key_down[key] = false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -62,10 +77,14 @@ fn main() {
         canvas.set_draw_color(COLOR_OFF);
         canvas.clear();
 
-        // do one step of chip-8
-        let raw_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
-        let instruction = decode_instruction(raw_instruction);
-        execute_instruction(&instruction, &mut chip8);
+        // roughly 11 instructions per frame, going by folklore
+        for _ in 0..11 {
+            // do one step of chip-8
+            let raw_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
+            let instruction = decode_instruction(raw_instruction);
+            execute_instruction(&instruction, &mut chip8);
+        }
+        chip8.decrement_timers();
 
         // draw new screen state
         canvas.set_draw_color(COLOR_ON);
@@ -82,11 +101,33 @@ fn main() {
         }
 
         canvas.present();
-        // keep emulation at ~60FPS
+        // keep emulation at ~60FPS (execution time of the loop not counted)
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 }
 
 fn load_file(name: &str) -> Vec<u8> {
     return std::fs::read(["./roms/", name].join("")).unwrap();
+}
+
+fn keycode_to_button(key: Keycode) -> Option<usize> {
+    match key {
+        Keycode::Num1 => Some(0x1),
+        Keycode::Num2 => Some(0x2),
+        Keycode::Num3 => Some(0x3),
+        Keycode::Num4 => Some(0xC),
+        Keycode::Q => Some(0x4),
+        Keycode::W => Some(0x5),
+        Keycode::E => Some(0x6),
+        Keycode::R => Some(0xD),
+        Keycode::A => Some(0x7),
+        Keycode::S => Some(0x8),
+        Keycode::D => Some(0x9),
+        Keycode::F => Some(0xE),
+        Keycode::Z => Some(0xA),
+        Keycode::X => Some(0x0),
+        Keycode::C => Some(0xB),
+        Keycode::V => Some(0xF),
+        _ => None,
+    }
 }

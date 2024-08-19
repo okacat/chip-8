@@ -25,6 +25,16 @@ impl Chip8 {
         }
     }
 
+    pub fn decrement_timers(&mut self) {
+        if self.regs.dt > 0 {
+            self.regs.dt -= 1
+        };
+
+        if self.regs.st > 0 {
+            self.regs.st -= 1
+        };
+    }
+
     pub fn get_px(&self, x: u8, y: u8) -> u8 {
         return self.disp_buffer[y as usize * SCREEN_WIDTH as usize + x as usize];
     }
@@ -48,6 +58,30 @@ impl Chip8 {
             self.memory[start_addr as usize + i] = *byte;
         }
     }
+
+    pub fn load_font(&mut self) {
+        let font = [
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+        ];
+        for (i, byte) in font.iter().enumerate() {
+            self.memory[i] = *byte;
+        }
+    }
 }
 
 pub struct Registers {
@@ -57,7 +91,6 @@ pub struct Registers {
     pub pc: u16,           // program counter
     pub sp: u8,            // stack pointer
     pub i: u16,            // index register
-    pub vf: u8,            // the carry register
 }
 
 impl Registers {
@@ -69,7 +102,6 @@ impl Registers {
             pc: 0,
             sp: 0,
             i: 0,
-            vf: 0,
         }
     }
 }
@@ -165,7 +197,7 @@ pub fn decode_instruction(instruction: u16) -> Instruction {
                 0x6 => Instruction::Shr { reg1, reg2 },
                 0x7 => Instruction::SubRegN { reg1, reg2 },
                 0xE => Instruction::Shl { reg1, reg2 },
-                unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
+                unknown_op => panic!("Opcode {} not recognized for group 8", unknown_op),
             }
         }
         0x9 => Instruction::SneReg {
@@ -192,7 +224,7 @@ pub fn decode_instruction(instruction: u16) -> Instruction {
             match (instruction & 0xFF) as u8 {
                 0x9E => Instruction::Skp { reg },
                 0xA1 => Instruction::SkpNp { reg },
-                unknown_op => panic!("Opcode #X{} not recognized for group E", unknown_op),
+                unknown_op => panic!("Opcode {} not recognized for group E", unknown_op),
             }
         }
         0xF => {
@@ -207,10 +239,10 @@ pub fn decode_instruction(instruction: u16) -> Instruction {
                 0x33 => Instruction::LdB { reg },
                 0x55 => Instruction::LdRegsMem { end_reg: reg },
                 0x65 => Instruction::LdMemRegs { end_reg: reg },
-                unknown_op => panic!("Opcode #X{} not recognized for group 8", unknown_op),
+                unknown_op => panic!("Opcode {} not recognized for group 8", unknown_op),
             }
         }
-        _ => panic!("Instruction #X{} not recognized", instruction),
+        _ => panic!("Instruction {} not recognized", instruction),
     }
 }
 
@@ -274,13 +306,13 @@ pub fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
             let reg1_val = chip8.regs.general[*reg1 as usize] as u32;
             let reg2_val = chip8.regs.general[*reg2 as usize] as u32;
             let result = reg1_val + reg2_val;
-            chip8.regs.vf = if result > 0xFF { 0x1 } else { 0x0 };
+            chip8.regs.general[0xF] = if result > 0xFF { 0x1 } else { 0x0 };
             chip8.regs.general[*reg1 as usize] = result as u8;
         }
         Instruction::SubReg { reg1, reg2 } => {
             let reg1_val = chip8.regs.general[*reg1 as usize] as i32;
             let reg2_val = chip8.regs.general[*reg2 as usize] as i32;
-            chip8.regs.vf = if reg1_val > reg2_val { 0x1 } else { 0x0 };
+            chip8.regs.general[0xF] = if reg1_val > reg2_val { 0x1 } else { 0x0 };
             let result = (reg1_val - reg2_val) as u8;
 
             chip8.regs.general[*reg1 as usize] = result as u8;
@@ -288,20 +320,20 @@ pub fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         Instruction::Shr { reg1, .. } => {
             // TODO: CHIP-48 and SUPER-CHIP also do VX = VY first
             let reg1_val = chip8.regs.general[*reg1 as usize];
-            chip8.regs.vf = reg1_val & 0x01;
+            chip8.regs.general[0xF] = reg1_val & 0x01;
             chip8.regs.general[*reg1 as usize] = reg1_val / 2;
         }
         Instruction::Shl { reg1, .. } => {
             // TODO: CHIP-48 and SUPER-CHIP also do VX = VY first
             let reg1_val = chip8.regs.general[*reg1 as usize];
-            chip8.regs.vf = if reg1_val & 0x80 > 0 { 0x1 } else { 0x0 };
+            chip8.regs.general[0xF] = if reg1_val & 0x80 > 0 { 0x1 } else { 0x0 };
             chip8.regs.general[*reg1 as usize] = ((reg1_val as u16) * 2) as u8;
         }
         Instruction::SubRegN { reg1, reg2 } => {
             let reg1_val = chip8.regs.general[*reg1 as usize] as i32;
             let reg2_val = chip8.regs.general[*reg2 as usize] as i32;
-            chip8.regs.vf = if reg2_val > reg1_val { 0x1 } else { 0x0 };
-            let result = (reg2_val - reg1_val) as u8;
+            chip8.regs.general[0xF] = if reg2_val > reg1_val { 0x1 } else { 0x0 };
+            let result: u8 = (reg2_val - reg1_val) as u8;
 
             chip8.regs.general[*reg1 as usize] = result as u8;
         }
@@ -326,7 +358,7 @@ pub fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
         } => {
             let x = chip8.regs.general[*reg1 as usize] % SCREEN_WIDTH;
             let y = chip8.regs.general[*reg2 as usize] % SCREEN_HEIGHT;
-            chip8.regs.vf = 0;
+            chip8.regs.general[0xF] = 0;
 
             for row in 0..*n_bytes as usize {
                 let sprite_row = chip8.memory[chip8.regs.i as usize + row];
@@ -346,7 +378,7 @@ pub fn execute_instruction(ins: &Instruction, chip8: &mut Chip8) {
                     };
                     let disp_bit = chip8.get_px(cx, cy);
                     if sprite_bit > 0 && disp_bit > 0 {
-                        chip8.regs.vf = 0x1;
+                        chip8.regs.general[0xF] = 0x1;
                     }
                     chip8.set_px(cx, cy, disp_bit ^ sprite_bit);
                 }
@@ -802,7 +834,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x16);
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
 
         // overflow
         chip8.regs.general[0xA] = 0xFF;
@@ -816,7 +848,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x01);
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
     }
 
     #[test]
@@ -835,7 +867,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x05);
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
 
         // overflow
         chip8.regs.general[0xA] = 0x00;
@@ -849,7 +881,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0xFE);
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
     }
 
     #[test]
@@ -868,7 +900,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x05);
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
 
         // overflow
         chip8.regs.general[0xA] = 0x02;
@@ -882,7 +914,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0xFE);
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
     }
 
     #[test]
@@ -900,7 +932,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x04);
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
 
         // overflow
         chip8.regs.general[0xA] = 0x5;
@@ -913,7 +945,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x02);
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
     }
 
     #[test]
@@ -931,7 +963,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x08);
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
 
         // overflow
         chip8.regs.general[0xA] = 0x81;
@@ -944,7 +976,7 @@ mod tests {
             &mut chip8,
         );
         assert_eq!(chip8.regs.general[0xA], 0x2);
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
     }
 
     #[test]
@@ -1020,7 +1052,7 @@ mod tests {
                 assert_eq!(chip8.get_px(x, y), 0x1);
             }
         }
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
 
         // re-draw sprite over the old one, it should clear the display
         execute_instruction(
@@ -1035,7 +1067,7 @@ mod tests {
         for byte in chip8.disp_buffer.iter() {
             assert_eq!(*byte, 0x0);
         }
-        assert_eq!(chip8.regs.vf, 0x1);
+        assert_eq!(chip8.regs.general[0xF], 0x1);
 
         // draw the sprite at x and y higher than screen coord, it should wrap
         chip8.regs.general[0xA] = 10 + 64;
@@ -1054,7 +1086,7 @@ mod tests {
                 assert_eq!(chip8.get_px(x, y), 0x1);
             }
         }
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
 
         // draw the sprite in the corner, the rest of it shouldn't wrap
         chip8.regs.general[0xA] = 62;
@@ -1073,7 +1105,7 @@ mod tests {
                 assert_eq!(chip8.get_px(x, y), 0x1);
             }
         }
-        assert_eq!(chip8.regs.vf, 0x0);
+        assert_eq!(chip8.regs.general[0xF], 0x0);
     }
 
     #[test]
