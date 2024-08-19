@@ -1,7 +1,7 @@
 use fastrand;
 
-const SCREEN_WIDTH: u8 = 64;
-const SCREEN_HEIGHT: u8 = 32;
+pub const SCREEN_WIDTH: u8 = 64;
+pub const SCREEN_HEIGHT: u8 = 32;
 const DISP_BUFFER_SIZE: usize = SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize;
 const STACK_SIZE: usize = 16;
 const MEMORY_SIZE: usize = 4096;
