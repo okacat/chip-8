@@ -32,6 +32,9 @@ Usage: chip8 <path-to-rom>
 ## Keymapping
 CHIP-8 has a 16x16 keypad layout. 
 It's mapped onto a keyboard like so:
+
+|   |   |   |   |
+|---|---|---|---|
 | 1 | 2 | 3 | 4 |
 | Q | W | E | R |
 | A | S | D | F |
