@@ -19,9 +19,10 @@ const COLOR_ON: Color = Color::RGB(0xF7, 0x87, 0x64);
 const DISP_SCALE: u32 = 8;
 
 fn main() {
+    println!("");
     println!("CHIP-8");
     println!("");
-    println!("welcome to CHIP-8 :)");
+    println!("welcome to CHIP-8 ツ");
     println!("");
 
     let args: Vec<String> = env::args().collect();
