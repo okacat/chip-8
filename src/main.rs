@@ -2,6 +2,9 @@ mod chip8;
 
 extern crate sdl2;
 
+use std::env;
+use std::io::Error;
+
 use chip8::{
     decode_instruction, execute_instruction, fetch_instruction, Chip8, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
@@ -18,9 +21,31 @@ const DISP_SCALE: u32 = 8;
 fn main() {
     println!("CHIP-8");
     println!("");
-    println!("welcome to my CHIP-8 emulator :)");
+    println!("welcome to CHIP-8 :)");
+    println!("");
 
-    let rom = load_file("Tetris [Fran Dachille, 1991].ch8");
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        println!("No ROM path provided.\nUsage: chip8 <path-to-rom>");
+        return;
+    }
+    let file_path = &args[1];
+
+    let path = env::current_dir().unwrap();
+    println!("The current directory is {}", path.display());
+
+    println!("Loading ROM at path {}", file_path);
+    let rom = match load_file(&file_path) {
+        Ok(data) => data,
+        Err(err) => {
+            println!(
+                "Failed to open ROM at path {}, error is \"{}\"",
+                file_path, err
+            );
+            return;
+        }
+    };
+
     let mut chip8 = Chip8::new();
     chip8.load_font();
     chip8.load_into_mem(&rom, 0x200);
@@ -28,7 +53,6 @@ fn main() {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-
     let window = video_subsystem
         .window(
             "chip-8",
@@ -36,6 +60,7 @@ fn main() {
             SCREEN_HEIGHT as u32 * DISP_SCALE,
         )
         .position_centered()
+        .opengl()
         .build()
         .unwrap();
 
@@ -106,8 +131,8 @@ fn main() {
     }
 }
 
-fn load_file(name: &str) -> Vec<u8> {
-    return std::fs::read(["./roms/", name].join("")).unwrap();
+fn load_file(name: &str) -> Result<Vec<u8>, Error> {
+    return std::fs::read(name);
 }
 
 fn keycode_to_button(key: Keycode) -> Option<usize> {
