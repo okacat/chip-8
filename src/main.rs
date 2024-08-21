@@ -47,10 +47,8 @@ fn main() {
         }
     };
 
-    let mut chip8 = Chip8::new();
-    chip8.load_font();
+    let mut chip8 = make_chip8();
     chip8.load_into_mem(&rom, 0x200);
-    chip8.regs.pc = 0x200;
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -70,6 +68,7 @@ fn main() {
     canvas.set_draw_color(COLOR_OFF);
     canvas.clear();
     canvas.present();
+
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -103,14 +102,7 @@ fn main() {
         canvas.set_draw_color(COLOR_OFF);
         canvas.clear();
 
-        // roughly 11 instructions per frame, going by folklore
-        for _ in 0..11 {
-            // do one step of chip-8
-            let raw_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
-            let instruction = decode_instruction(raw_instruction);
-            execute_instruction(&instruction, &mut chip8);
-        }
-        chip8.decrement_timers();
+        emulation_step(&mut chip8);
 
         // draw new screen state
         canvas.set_draw_color(COLOR_ON);
@@ -130,6 +122,23 @@ fn main() {
         // keep emulation at ~60FPS (execution time of the loop not counted)
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
+}
+
+fn make_chip8() -> Chip8 {
+    let mut chip8 = Chip8::new();
+    chip8.load_font();
+    chip8.regs.pc = 0x200;
+    chip8
+}
+
+fn emulation_step(chip8: &mut Chip8) {
+    // roughly 11 instructions per frame, going by folklore
+    for _ in 0..11 {
+        let raw_instruction = fetch_instruction(&mut chip8.regs, &chip8.memory);
+        let instruction = decode_instruction(raw_instruction);
+        execute_instruction(&instruction, chip8);
+    }
+    chip8.decrement_timers();
 }
 
 fn load_file(name: &str) -> Result<Vec<u8>, Error> {
